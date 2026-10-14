@@ -1,0 +1,34 @@
+# Builds MinimapMenu.dll on GitHub's Windows machines, so no local Visual Studio is needed.
+# Push to your fork (or use Actions > build > Run workflow) and download the "MinimapMenu" artifact.
+name: build
+on:
+  push:
+  workflow_dispatch:
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      - uses: xmake-io/github-action-setup-xmake@v1
+        with:
+          xmake-version: latest
+      - name: Configure
+        run: xmake f -c -y -p windows -a x64 -m releasedbg --toolchain=msvc
+      - name: Build
+        run: xmake -y
+      - name: Generate INI and translations
+        run: python tools/gen.py
+      - name: Package
+        shell: pwsh
+        run: |
+          $plugins = "package/OblivionRemastered/Binaries/Win64/OBSE/Plugins"
+          New-Item -ItemType Directory -Force $plugins | Out-Null
+          Copy-Item -Recurse dist/OblivionRemastered package/ -Force
+          Get-ChildItem build -Recurse -Include MinimapMenu.dll, MinimapMenu.pdb | Copy-Item -Destination $plugins
+          Copy-Item dist/LICENSE, dist/NOTICE.md, dist/THIRD_PARTY_NOTICES.md, CHANGELOG.md package/ -ErrorAction SilentlyContinue
+      - uses: actions/upload-artifact@v4
+        with:
+          name: MinimapMenu
+          path: package/
