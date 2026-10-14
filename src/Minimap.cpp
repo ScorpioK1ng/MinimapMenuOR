@@ -683,7 +683,13 @@ namespace minimap
 			if (auto* mapImg = g_mapImg.Get()) {
 				localmap::Placement lp;
 				const auto cap = capture::Current();
-				if (s.mapImage == 1 && s.alwaysDrawLocalMap && cap.valid) {
+				// coord-fix: a capture from another cell (the exterior just left, the dungeon level before a load door) is
+				// never placed under the player - Unreal coordinates of different cells can overlap, so the bounds check
+				// alone can show the wrong place for the whole settle window
+				const bool capHere = cap.valid && cap.interior == indoors && (!indoors || (playerNow && cap.cell == playerNow->parentCell));
+				if (s.mapImage == 1 && s.alwaysDrawLocalMap && cap.valid && !capHere) {
+					lp.ok = false;   // parchment until our own capture of this cell arrives
+				} else if (s.mapImage == 1 && s.alwaysDrawLocalMap && cap.valid) {
 					std::array<double, 3> w{};
 					static ue::Getter getPawn(L"K2_GetPawn");
 					static ue::Getter location(L"K2_GetActorLocation");

@@ -43,6 +43,7 @@ namespace settings
 			MM_ROW("Map", "bAlwaysDrawLocalMap", kBool, alwaysDrawLocalMap, 1, 0, 1, "1 = the minimap draws the local map around you at all times, with the game's own capture and wall-line material; 0 = only where you opened the Map screen's local map."),
 			MM_ROW("Rendering", "fCaptureWidthMetres", kFloat, captureWidthMetres, 180, 40, 600, "How much of the area around you is drawn, in metres across."),
 			MM_ROW("Rendering", "fInteriorCutMetres", kFloat, interiorCutMetres, 2.5, 0.5, 10, "Indoors, how far above your feet the map is cut: ceilings and floors above stay out of it."),
+			MM_ROW("Rendering", "fInteriorDepthMetres", kFloat, interiorDepthMetres, 4, 0, 50, "Indoors, how far below your feet the map still draws: lower floors and passages beneath you stay out of it. 0 = no limit."),
 			MM_ROW("Rendering", "fRecaptureMoveFraction", kFloat, recaptureMoveFraction, 0.25, 0.05, 0.45, "The map is drawn again after you move this share of its width (or change cell)."),
 			MM_ROW("Rendering", "iMapQuarterTurns", kInt, mapQuarterTurns, 0, 0, 3, "A correction, if the drawn map comes out turned: quarter turns clockwise."),
 			MM_ROW("Rendering", "bMapMirror", kBool, mapMirror, 0, 0, 1, "A correction, if the drawn map comes out mirrored."),

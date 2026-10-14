@@ -14,6 +14,7 @@ namespace localmap
 		ue::Handle g_manager;
 		double     g_mapW = 0, g_mapH = 0;   // the map's size in map units (FLegacyMapMenuLocalMapProperties.MapSize)
 		RE::TESObjectCELL* g_cell = nullptr;  // the cell the player was in when the map was read
+		bool       g_readInterior = false;     // coord-fix: the map was read indoors
 		ULONGLONG  g_nextScan = 0, g_nextManager = 0;
 		int        g_reads = 0;
 		bool       g_foundThisMenu = false;
@@ -145,6 +146,7 @@ namespace localmap
 			if (mid != g_material.Get() || (player && player->parentCell != g_cell)) {
 				g_material.Set(mid);
 				g_cell = player ? player->parentCell : nullptr;
+				g_readInterior = player && static_cast<bool>(player->GetInterior());
 				g_linear = false;   // a new map: its mapping is measured again
 				++g_reads;
 				Status(std::format("read the game's local map ({}; map size {:.0f} x {:.0f}) - shown on the minimap while you are on it", ue::NameOf(mid), g_mapW, g_mapH));
@@ -161,6 +163,16 @@ namespace localmap
 		auto* mgr = Manager();
 		std::array<double, 3> w{};
 		if (!mid || !mgr || !PlayerWorld(w)) return p;
+		// coord-fix: the header promises parchment in another cell, but only the map's bounds were checked - after a load
+		// door the old map's linear mapping was applied to the new cell's coordinates. Indoors the cell must be the one
+		// the map was read in; outdoors the exterior cell changes every few dozen metres while the map stays valid.
+		{
+			auto* player = RE::PlayerCharacter::GetSingleton();
+			if (!player) return p;
+			const bool interiorNow = static_cast<bool>(player->GetInterior());
+			if (interiorNow != g_readInterior) return p;
+			if (interiorNow && player->parentCell != g_cell) return p;
+		}
 		// Unreal's world axes: +X east, -Y north (Oblivion's +y) - one metre each way, so the map's own scale and
 		// rotation come from the game's helper rather than from an assumption. Measured once per map read; after that the
 		// mapping is linear arithmetic, no engine call per update.

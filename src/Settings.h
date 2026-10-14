@@ -44,6 +44,7 @@ namespace settings
 		// [Rendering] - the always-drawn local map
 		float        captureWidthMetres = 180.0f;  // the area drawn around the player (the owner: "local to the area the player inhabits")
 		float        interiorCutMetres = 2.5f;     // indoors, the camera's height above the feet: ceilings and upper floors stay out
+		float        interiorDepthMetres = 4.0f;   // coord-fix: indoors, how far below the feet is still drawn (0 = no limit)
 		float        recaptureMoveFraction = 0.25f;   // a new capture after moving this share of the width
 		std::int32_t mapQuarterTurns = 0;          // a correction if the drawn map comes out turned (0-3 quarter turns clockwise)
 		bool         mapMirror = false;            // a correction if it comes out mirrored

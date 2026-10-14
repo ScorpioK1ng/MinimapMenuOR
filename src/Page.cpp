@@ -126,6 +126,8 @@ namespace page
 			ImGui::BeginDisabled(!s.alwaysDrawLocalMap);
 			if (precise::SliderFloat(TR("CaptureWidth", "Area drawn around me"), &s.captureWidthMetres, 40.0f, 600.0f, "%.0f m")) Changed();
 			if (precise::SliderFloat(TR("InteriorCut", "Indoors, cut above my feet at"), &s.interiorCutMetres, 0.5f, 10.0f, "%.1f m")) Changed();
+			if (precise::SliderFloat(TR("InteriorDepth", "Indoors, draw below my feet down to"), &s.interiorDepthMetres, 0.0f, 50.0f, "%.1f m")) Changed();
+			Hint(TR("InteriorDepthHint", "Keeps lower floors of a dungeon out of the picture. 0 = no limit."));
 			const char* turns[4] = { TR("Turn0", "No correction"), TR("Turn1", "Turn a quarter clockwise"), TR("Turn2", "Turn half way"), TR("Turn3", "Turn a quarter anticlockwise") };
 			ImGui::SetNextItemWidth(Wide());
 			if (ImGui::Combo(TR("MapTurn", "If the drawn map is turned"), &s.mapQuarterTurns, turns, 4)) Changed();

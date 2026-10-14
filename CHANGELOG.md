@@ -3,6 +3,25 @@
 Written as changes happen, not reconstructed afterwards (rule 61). A version number is issued by the version gate only
 once a build is seen working in game (rule 48); until then entries sit under "Unreleased".
 
+## Unreleased - coord-fix (community patch, not by ApocryphaRealm)
+
+Modified version under the GPL-3.0: interior and dungeon placement fixes. Untested in game at the time of writing.
+
+### Fixed
+- Indoors the minimap could show a picture from somewhere else under the player. A capture is now only shown in the
+  cell (and indoors/outdoors state) it was taken in; until a new one arrives, the parchment shows.
+- The game's Map screen draws into the same render targets as the minimap's own capture. Returning from any menu now
+  forces a fresh capture straight away, instead of keeping the Map screen's picture placed as if it were ours.
+- If the game re-sizes its local-map capture component behind the minimap's back, that is detected (OrthoWidth no
+  longer what we left there), logged at debug level, and the map is captured again at once.
+- Read mode (bAlwaysDrawLocalMap=0): the map read from the Map screen is no longer applied in a different interior
+  cell, or after going in or out of doors.
+
+### Added
+- fInteriorDepthMetres (default 4): indoors, the capture stops this far below the feet (MaxViewDistanceOverride), so
+  lower floors of a dungeon are not drawn into the picture. 0 = no limit.
+- Every capture is logged at debug level (uLogLevel=0) with its cell, position, width and depth limit.
+
 ## 1.0.2 - 2026-10-01 - working
 
 ### Fixed

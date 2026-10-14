@@ -26,6 +26,8 @@ namespace capture
 		UE::UObject* material = nullptr;   // our MID of M_LocalMapUI
 		double       cx = 0, cy = 0;       // the capture's centre, Unreal world cm
 		double       width = 0;            // cm across
+		RE::TESObjectCELL* cell = nullptr; // the cell the capture was taken in (coord-fix)
+		bool         interior = false;     // taken indoors (coord-fix)
 	};
 	Record Current();
 	void   Invalidate();   // capture again on the next tick (a setting changed)

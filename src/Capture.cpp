@@ -22,6 +22,11 @@ namespace capture
 		bool       g_force = true;
 		int        g_captures = 0;
 		double     g_lastMicros = 0;
+		// coord-fix: the OrthoWidth we left on the game's depth capture component after our last capture. The game's own
+		// Map screen (and possibly its own interior map build) re-aims and re-sizes that component and captures into the
+		// SAME render targets the minimap shows; if the width is no longer ours, the picture is no longer ours either.
+		float      g_leftOrtho = -1.0f;
+		int        g_foreignUses = 0;
 
 		std::mutex  g_lock;
 		std::string g_status = "not captured yet";
@@ -62,6 +67,7 @@ namespace capture
 		{
 			std::array<double, 3> loc{}, rot{};
 			float        ortho = 0;
+			float        maxDist = -1.0f;   // coord-fix: MaxViewDistanceOverride (-1 = none)
 			std::uint8_t mode = 0;
 			bool         ok = false;
 		};
@@ -77,11 +83,12 @@ namespace capture
 			if (ortho < 0 || mode < 0 || !getLoc.Get(a_c, s.loc) || !getRot.Get(a_c, s.rot)) return s;
 			s.ortho = *ue::At<float>(a_c, ortho);
 			s.mode = *ue::At<std::uint8_t>(a_c, mode);
+			if (const auto md = ue::Offset(cls, "MaxViewDistanceOverride"); md >= 0) s.maxDist = *ue::At<float>(a_c, md);
 			s.ok = true;
 			return s;
 		}
 
-		void Place(UE::UObject* a_c, const std::array<double, 3>& a_loc, const std::array<double, 3>& a_rot, float a_ortho, std::uint8_t a_mode)
+		void Place(UE::UObject* a_c, const std::array<double, 3>& a_loc, const std::array<double, 3>& a_rot, float a_ortho, std::uint8_t a_mode, float a_maxDist)
 		{
 			ue::Call l(a_c, L"K2_SetWorldLocation");
 			l.Set("NewLocation", a_loc);
@@ -94,6 +101,24 @@ namespace capture
 			auto* cls = a_c->GetClass();
 			if (auto* o = cls ? ue::At<float>(a_c, ue::Offset(cls, "OrthoWidth")) : nullptr) *o = a_ortho;
 			if (auto* m = cls ? ue::At<std::uint8_t>(a_c, ue::Offset(cls, "PrimitiveRenderMode")) : nullptr) *m = a_mode;
+			// coord-fix: the far limit of the capture, so a dungeon's lower floors are not drawn under the player's own
+			if (const auto md = cls ? ue::Offset(cls, "MaxViewDistanceOverride") : -1; md >= 0) *ue::At<float>(a_c, md) = a_maxDist;
+		}
+
+		// coord-fix: has something other than us re-sized the game's depth capture component since our last capture?
+		bool GameUsedComponents(UE::UObject* a_pc)
+		{
+			if (g_leftOrtho < 0.0f) return false;
+			auto* depth = ObjectProp(a_pc, "LocalMapSceneDepthCaptureComponent");
+			auto* cls = depth ? depth->GetClass() : nullptr;
+			const auto off = cls ? ue::Offset(cls, "OrthoWidth") : -1;
+			if (off < 0) return false;
+			const float now = *ue::At<float>(depth, off);
+			if (std::abs(now - g_leftOrtho) <= 0.5f) return false;
+			++g_foreignUses;
+			logger::debug("capture: the game re-used its local-map capture (width {:.0f} -> {:.0f}, {} times so far) - drawing ours again", g_leftOrtho, now, g_foreignUses);
+			g_leftOrtho = -1.0f;
+			return true;
 		}
 
 		UE::UObject* Material(UE::UObject* a_pc, bool a_exterior)
@@ -121,7 +146,7 @@ namespace capture
 			return mid;
 		}
 
-		bool Capture(UE::UObject* a_pc, const std::array<double, 3>& a_player, bool a_interior)
+		bool Capture(UE::UObject* a_pc, const std::array<double, 3>& a_player, bool a_interior, RE::TESObjectCELL* a_cell)
 		{
 			const auto& s = settings::Get();
 			auto* depth = ObjectProp(a_pc, "LocalMapSceneDepthCaptureComponent");
@@ -142,9 +167,14 @@ namespace capture
 			const double height = a_interior ? std::max(50.0, s.interiorCutMetres * 100.0) : 20000.0;
 			const std::array<double, 3> at{ a_player[0], a_player[1], a_player[2] + height };
 			const std::array<double, 3> down{ -90.0, -90.0, 0.0 };   // pitch, yaw, roll - the game's CameraRotationAngles: north at the top
+			// coord-fix: indoors, stop drawing fInteriorDepthMetres below the feet (the pawn's location is about a metre
+			// above them), so floors and passages beneath the player are not drawn into the picture as if they were here
+			const float maxDist = a_interior && s.interiorDepthMetres > 0.0f ?
+			                          static_cast<float>(height + 100.0 + s.interiorDepthMetres * 100.0) :
+			                          -1.0f;
 			// PRM_RenderScenePrimitives (1): the game's own show-only list is built by its native map build, not here
-			Place(depth, at, down, static_cast<float>(width), 1);
-			Place(color, at, down, static_cast<float>(width), 1);
+			Place(depth, at, down, static_cast<float>(width), 1, maxDist);
+			Place(color, at, down, static_cast<float>(width), 1, maxDist);
 			ue::Call(depth, L"CaptureScene").Run();
 			ue::Call(color, L"CaptureScene").Run();
 			bool sobelDrawn = false;
@@ -159,12 +189,16 @@ namespace capture
 					sobelDrawn = draw.RunGuarded();   // a world-context call: fault-guarded (a quit, a load)
 				}
 			}
-			Place(depth, d.loc, d.rot, d.ortho, d.mode);   // everything back the same frame
-			Place(color, c.loc, c.rot, c.ortho, c.mode);
+			Place(depth, d.loc, d.rot, d.ortho, d.mode, d.maxDist);   // everything back the same frame
+			Place(color, c.loc, c.rot, c.ortho, c.mode, c.maxDist);
+			g_leftOrtho = d.ortho;   // coord-fix: what a later check expects to still find there
 			g_lastMicros = std::chrono::duration<double, std::micro>(std::chrono::steady_clock::now() - t0).count();
 			auto* mid = Material(a_pc, !a_interior);
-			g_rec = { mid != nullptr, mid, a_player[0], a_player[1], width };
+			g_rec = { mid != nullptr, mid, a_player[0], a_player[1], width, a_cell, a_interior };
 			++g_captures;
+			logger::debug("capture: #{} {} cell {} at ({:.0f}, {:.0f}, {:.0f}), {:.0f} m across, depth limit {}",
+				g_captures, a_interior ? "interior" : "exterior", static_cast<const void*>(a_cell), a_player[0], a_player[1], a_player[2],
+				width / 100.0, maxDist > 0.0f ? std::format("{:.1f} m", maxDist / 100.0) : std::string("none"));
 			if (g_captures == 1 || !sobelDrawn) {
 				logger::info("capture: #{} {} at ({:.0f}, {:.0f}), {:.0f} m across, camera {:.1f} m above the feet; Sobel pass {}; {:.0f} us on the game thread",
 					g_captures, a_interior ? "interior" : "exterior", a_player[0], a_player[1], width / 100.0, height / 100.0,
@@ -183,10 +217,15 @@ namespace capture
 			g_force = true;
 			return;
 		}
-		if (!a_gameplay) return;   // the game's own Map screen captures for itself
-		static float lastWidth = -1, lastCut = -1;
-		if (s.captureWidthMetres != lastWidth || s.interiorCutMetres != lastCut) {
-			lastWidth = s.captureWidthMetres, lastCut = s.interiorCutMetres;
+		if (!a_gameplay) {
+			// coord-fix: a menu - the Map screen above all - may draw into the same render targets; draw ours again as
+			// soon as the minimap is back on screen instead of after walking a quarter of the width
+			if (g_rec.valid) g_force = true;
+			return;
+		}
+		static float lastWidth = -1, lastCut = -1, lastDepth = -1;
+		if (s.captureWidthMetres != lastWidth || s.interiorCutMetres != lastCut || s.interiorDepthMetres != lastDepth) {
+			lastWidth = s.captureWidthMetres, lastCut = s.interiorCutMetres, lastDepth = s.interiorDepthMetres;
 			g_force = true;
 		}
 		const ULONGLONG now = GetTickCount64();
@@ -211,7 +250,9 @@ namespace capture
 			Status("waiting for the world to settle");
 			return;
 		}
-		if (g_lastCapture && now - g_lastCapture < static_cast<ULONGLONG>(std::max(0, s.redrawIntervalMs))) return;   // DEM's redraw gap
+		if (GameUsedComponents(pc)) g_force = true;   // coord-fix
+		// DEM's redraw gap - but not for a forced redraw (coord-fix): a picture known to be wrong is replaced at once
+		if (!g_force && g_lastCapture && now - g_lastCapture < static_cast<ULONGLONG>(std::max(0, s.redrawIntervalMs))) return;
 		const double moved = g_rec.valid ? std::hypot(w[0] - g_rec.cx, w[1] - g_rec.cy) : 1e12;
 		const bool need = g_force || !g_rec.valid || cell != g_cell || interior != g_interior || moved > g_rec.width * std::clamp(s.recaptureMoveFraction, 0.05f, 0.45f);
 		if (!need) return;
@@ -219,7 +260,7 @@ namespace capture
 		g_cell = cell;
 		g_interior = interior;
 		g_lastCapture = now;
-		Capture(pc, w, interior);
+		Capture(pc, w, interior, cell);
 	}
 
 	Record Current() { return g_rec.valid && g_mid.Get() ? g_rec : Record{}; }
@@ -230,6 +271,7 @@ namespace capture
 	{
 		std::scoped_lock l(g_lock);
 		return { { "status", g_status }, { "captures", g_captures }, { "valid", g_rec.valid }, { "centre", { g_rec.cx, g_rec.cy } },
+			{ "foreign_uses", g_foreignUses },
 			{ "width_cm", g_rec.width }, { "interior", g_interior }, { "last_capture_us", g_lastMicros } };
 	}
 }
